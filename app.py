@@ -42,7 +42,7 @@ def login(email, senha):
         })
 
         st.session_state.user = res.user
-        st.session_state.session = res.session  # 🔥 ESSENCIAL
+        st.session_state.session = res.session
 
         st.success("✅ Login realizado!")
     except Exception as e:
@@ -54,13 +54,40 @@ def logout():
     st.session_state.session = None
     st.success("Você saiu da conta")
 
+
+def criar_treino(nome):
+    try:
+        supabase.table("workouts").insert({
+            "user_id": st.session_state.user.id,
+            "nome": nome
+        }).execute()
+        st.success("✅ Treino criado!")
+        st.rerun()
+    except Exception as e:
+        st.error("❌ Erro ao criar treino")
+        st.write(e)
+
+
+def deletar_treino(treino_id):
+    try:
+        supabase.table("workouts") \
+            .delete() \
+            .eq("id", treino_id) \
+            .execute()
+
+        st.success("🗑️ Treino excluído!")
+        st.rerun()
+    except Exception as e:
+        st.error("❌ Erro ao excluir treino")
+        st.write(e)
+
 # ==============================
 # 🖥️ INTERFACE
 # ==============================
 st.title("🏋️ App de Treino")
 
 # ==============================
-# 🔐 TELA DE LOGIN
+# 🔐 LOGIN
 # ==============================
 if not st.session_state.user:
 
@@ -91,22 +118,11 @@ else:
     # ==============================
     st.subheader("🏋️ Seus Treinos")
 
-    # Criar treino
     novo_treino = st.text_input("Nome do treino")
 
     if st.button("➕ Criar treino"):
         if novo_treino:
-            try:
-                supabase.table("workouts").insert({
-                    "user_id": st.session_state.user.id,
-                    "nome": novo_treino
-                }).execute()
-
-                st.success("✅ Treino criado!")
-
-            except Exception as e:
-                st.error("❌ Erro ao criar treino")
-                st.write(e)
+            criar_treino(novo_treino)
         else:
             st.warning("Digite um nome para o treino")
 
@@ -121,7 +137,14 @@ else:
 
         if res.data:
             for treino in res.data:
-                st.write(f"🏋️ {treino['nome']}")
+                col1, col2 = st.columns([4, 1])
+
+                with col1:
+                    st.write(f"🏋️ {treino['nome']}")
+
+                with col2:
+                    if st.button("🗑️", key=treino["id"]):
+                        deletar_treino(treino["id"])
         else:
             st.info("Você ainda não criou nenhum treino.")
 
