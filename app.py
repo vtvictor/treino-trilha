@@ -1,30 +1,86 @@
 import streamlit as st
+from supabase import create_client
 
-workouts = {
-    "Quarta (Força)": [
-        "Aquecimento (5 min)",
-        "Agachamento 4x 8-10",
-        "Leg Press 4x 10-12",
-        "Afundo 3x 10 cada perna",
-        "Mesa Flexora 3x 10-12",
-        "Cadeira Extensora 3x 12-15",
-        "Panturrilha 4x 12-15",
-    ],
-    "Sábado (Resistência)": [
-        "Esteira inclinada (20 min)",
-        "Step 3x 10 cada perna",
-        "Afundo 3x 12 cada perna",
-        "Leg Press 3x 15-20",
-        "Panturrilha 4x 15-20",
-        "Prancha 3x 30-45s",
-    ],
-}
+# ==============================
+# 🔑 CONFIG (usar secrets depois)
+# ==============================
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-st.title("🏋️ Treino de Trilha")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-day = st.selectbox("Escolha o dia:", list(workouts.keys()))
+# ==============================
+# 🧠 SESSION
+# ==============================
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-st.write("### Exercícios")
+# ==============================
+# 🎯 FUNÇÕES
+# ==============================
+def login(email, senha):
+    try:
+        res = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": senha
+        })
+        st.session_state.user = res.user
+        st.success("✅ Login realizado!")
+    except:
+        st.error("❌ Email ou senha inválidos")
 
-for i, exercise in enumerate(workouts[day]):
-    st.checkbox(exercise, key=f"{day}_{i}")
+
+def cadastro(email, senha):
+    try:
+        supabase.auth.sign_up({
+            "email": email,
+            "password": senha
+        })
+        st.success("✅ Conta criada! Agora faça login.")
+    except:
+        st.error("❌ Erro ao criar conta")
+
+
+def logout():
+    st.session_state.user = None
+    st.success("Você saiu da conta")
+
+# ==============================
+# 🖥️ INTERFACE
+# ==============================
+st.title("🏋️ App de Treino")
+
+# ==============================
+# 🔐 SE NÃO ESTIVER LOGADO
+# ==============================
+if not st.session_state.user:
+
+    st.subheader("🔐 Acesso")
+
+    menu = st.radio("Escolha:", ["Login", "Cadastro"])
+
+    email = st.text_input("Email")
+    senha = st.text_input("Senha", type="password")
+
+    if menu == "Login":
+        if st.button("Entrar"):
+            login(email, senha)
+
+    if menu == "Cadastro":
+        if st.button("Criar conta"):
+            cadastro(email, senha)
+
+# ==============================
+# ✅ SE ESTIVER LOGADO
+# ==============================
+else:
+    st.success(f"👤 Logado como: {st.session_state.user.email}")
+
+    if st.button("🚪 Sair"):
+        logout()
+
+    st.divider()
+
+    st.subheader("🏋️ Seu treino (em breve)")
+
+    st.info("Aqui vamos colocar:\n- Treinos\n- Timer\n- Histórico")
