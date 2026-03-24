@@ -7,8 +7,6 @@ from supabase import create_client
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 # ==============================
 # 🧠 SESSION
 # ==============================
@@ -19,24 +17,26 @@ if "session" not in st.session_state:
     st.session_state.session = None
 
 # ==============================
-# 🔐 RESTAURAR SESSÃO
+# 🔐 CLIENTE AUTENTICADO (FIX RLS)
 # ==============================
-if st.session_state.session:
-    try:
-        supabase.auth.set_session(
-            st.session_state.session.access_token,
-            st.session_state.session.refresh_token
+def get_supabase():
+    client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    if st.session_state.session:
+        client.postgrest.auth(
+            st.session_state.session.access_token
         )
-    except:
-        st.session_state.session = None
-        st.session_state.user = None
+
+    return client
 
 # ==============================
 # 🎯 FUNÇÕES
 # ==============================
 def login(email, senha):
     try:
-        res = supabase.auth.sign_in_with_password({
+        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        res = client.auth.sign_in_with_password({
             "email": email,
             "password": senha
         })
@@ -57,12 +57,16 @@ def logout():
 
 def criar_treino(nome):
     try:
-        supabase.table("workouts").insert({
+        db = get_supabase()
+
+        db.table("workouts").insert({
             "user_id": st.session_state.user.id,
             "nome": nome
         }).execute()
+
         st.success("✅ Treino criado!")
         st.rerun()
+
     except Exception as e:
         st.error("❌ Erro ao criar treino")
         st.write(e)
@@ -70,13 +74,16 @@ def criar_treino(nome):
 
 def deletar_treino(treino_id):
     try:
-        supabase.table("workouts") \
+        db = get_supabase()
+
+        db.table("workouts") \
             .delete() \
             .eq("id", treino_id) \
             .execute()
 
         st.success("🗑️ Treino excluído!")
         st.rerun()
+
     except Exception as e:
         st.error("❌ Erro ao excluir treino")
         st.write(e)
@@ -126,9 +133,13 @@ else:
         else:
             st.warning("Digite um nome para o treino")
 
-    # Buscar treinos
+    # ==============================
+    # 📋 LISTAR TREINOS
+    # ==============================
     try:
-        res = supabase.table("workouts") \
+        db = get_supabase()
+
+        res = db.table("workouts") \
             .select("*") \
             .eq("user_id", st.session_state.user.id) \
             .execute()
