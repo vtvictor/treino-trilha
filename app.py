@@ -27,9 +27,7 @@ if "descanso_ate" not in st.session_state:
 def get_db():
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
     if st.session_state.session:
-        client.postgrest.auth(
-            st.session_state.session.access_token
-        )
+        client.postgrest.auth(st.session_state.session.access_token)
     return client
 
 # ==============================
@@ -57,16 +55,35 @@ def deletar_treino(treino_id):
     db.table("workouts").delete().eq("id", treino_id).execute()
     st.rerun()
 
+def atualizar_exercicio(ex_id, done):
+    db = get_db()
+    db.table("exercises").update({"done": done}).eq("id", ex_id).execute()
+
+def finalizar_treino(treino):
+    db = get_db()
+    # Salva histórico
+    db.table("workout_history").insert({
+        "user_id": st.session_state.user.id,
+        "workout_id": treino["id"],
+        "nome": treino["nome"]
+    }).execute()
+    # Marca todos exercícios como feitos
+    db.table("exercises").update({"done": True}).eq("workout_id", treino["id"]).execute()
+    # Volta para tela inicial
+    st.session_state.treino_selecionado = None
+    st.success("Treino finalizado e salvo no histórico!")
+    st.experimental_rerun()
+
 # ==============================
-# ESTILO HEVY
+# ESTILO CLEAN
 # ==============================
-st.set_page_config(page_title="Treino em Foco", layout="wide")
+st.set_page_config(page_title="Treino em Foco", layout="centered")
 st.markdown("""
 <style>
 .stButton>button {border-radius:12px; padding:0.5rem 1rem;}
 .stTextInput>div>input {height:2.5rem;}
-.card {background-color:#f5f5f5; padding:1rem; border-radius:12px; margin-bottom:1rem; box-shadow:2px 2px 5px rgba(0,0,0,0.1);}
-.card-done {background-color:#d4edda; padding:1rem; border-radius:12px; margin-bottom:1rem; box-shadow:2px 2px 5px rgba(0,0,0,0.1);}
+.card {background-color:#f5f5f5; padding:1rem; border-radius:12px; margin-bottom:1rem; box-shadow:1px 1px 3px rgba(0,0,0,0.1);}
+.card-done {background-color:#d4edda; padding:1rem; border-radius:12px; margin-bottom:1rem; box-shadow:1px 1px 3px rgba(0,0,0,0.1);}
 h4 {margin:0;}
 </style>
 """, unsafe_allow_html=True)
@@ -91,17 +108,14 @@ else:
     aba = st.radio("Menu", ["Treinos","Histórico"], horizontal=True)
 
     # ==============================
-    # HISTÓRICO COM GRÁFICO
+    # HISTÓRICO SIMPLES
     # ==============================
     if aba == "Histórico":
-        st.subheader("📊 Histórico de Treinos")
+        st.subheader("📋 Histórico de Treinos")
         res = db.table("workout_history").select("*").eq("user_id", st.session_state.user.id).order("data", desc=True).execute()
         if res.data:
-            df = pd.DataFrame(res.data)
-            df['data'] = pd.to_datetime(df['data']).dt.date
-            st.dataframe(df[['nome','data']], use_container_width=True)
-            chart_data = df.groupby('data').count()['nome']
-            st.bar_chart(chart_data)
+            for h in res.data:
+                st.markdown(f"🏋️ **{h['nome']}** - {h['data'][:16]}")
         else:
             st.info("Nenhum treino registrado ainda.")
 
@@ -109,7 +123,6 @@ else:
     # TREINOS
     # ==============================
     else:
-        # LISTA DE TREINOS
         if not st.session_state.treino_selecionado:
             st.subheader("🏋️ Seus Treinos")
             novo = st.text_input("Novo treino")
@@ -118,12 +131,12 @@ else:
             res = db.table("workouts").select("*").eq("user_id", st.session_state.user.id).execute()
             for t in res.data or []:
                 with st.container():
-                    card_col1, card_col2 = st.columns([4,1])
-                    with card_col1:
+                    col1, col2 = st.columns([4,1])
+                    with col1:
                         if st.button(f"🏋️ {t['nome']}", key=t["id"]):
                             st.session_state.treino_selecionado = t
                             st.rerun()
-                    with card_col2:
+                    with col2:
                         if st.button("🗑️", key=f"del_{t['id']}"):
                             deletar_treino(t["id"])
         else:
@@ -161,12 +174,10 @@ else:
                         db.table("exercises").insert({"workout_id":treino["id"],"nome":novo_ex,"done":False}).execute()
                         st.rerun()
 
-            # LISTA EXERCÍCIOS EM CARDS
+            # LISTA EXERCÍCIOS COM CHECKBOX FUNCIONANDO
             res=db.table("exercises").select("*").eq("workout_id", treino["id"]).execute()
             st.markdown("### 💪 Exercícios")
             if res.data:
-                feito=0
-                total=len(res.data)
                 for ex in res.data:
                     card_class="card-done" if ex["done"] else "card"
                     with st.container():
@@ -177,7 +188,8 @@ else:
                         with col1:
                             checked=st.checkbox(nome,value=ex["done"],key=f"chk_{ex['id']}")
                             if checked != ex["done"]:
-                                db.table("exercises").update({"done":checked}).eq("id",ex["id"]).execute()
+                                atualizar_exercicio(ex["id"], checked)
+                                st.rerun()
                         with col2:
                             if st.button("⏱️", key=f"t_{ex['id']}"):
                                 st.session_state.descanso_ate=time.time()+60; st.rerun()
@@ -187,9 +199,6 @@ else:
                                     db.table("exercises").delete().eq("id",ex["id"]).execute()
                                     st.rerun()
                         st.markdown("</div>", unsafe_allow_html=True)
-                        if ex["done"]: feito+=1
-                # BARRA DE PROGRESSO
-                st.progress(feito/total)
             else:
                 st.info("Nenhum exercício")
 
@@ -197,7 +206,4 @@ else:
 
             # FINALIZAR TREINO
             if st.button("✅ Finalizar treino"):
-                db.table("workout_history").insert({"user_id":st.session_state.user.id,"workout_id":treino["id"],"nome":treino["nome"]}).execute()
-                db.table("exercises").update({"done":True}).eq("workout_id",treino["id"]).execute()
-                st.success("Treino finalizado e salvo no histórico!")
-                st.rerun()
+                finalizar_treino(treino)
