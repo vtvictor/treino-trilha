@@ -26,8 +26,8 @@ def login(email, senha):
         })
         st.session_state.user = res.user
         st.success("✅ Login realizado!")
-    except:
-        st.error("❌ Email ou senha inválidos")
+    except Exception as e:
+        st.error(f"❌ Erro no login: {e}")
 
 
 def logout():
@@ -66,6 +66,10 @@ else:
 
     st.divider()
 
+    # 🔍 DEBUG (IMPORTANTE AGORA)
+    st.write("### 🧪 Debug usuário")
+    st.json(st.session_state.user)
+
     # ==============================
     # 🏋️ TREINOS
     # ==============================
@@ -76,24 +80,36 @@ else:
 
     if st.button("➕ Criar treino"):
         if novo_treino:
-            supabase.table("workouts").insert({
-                "user_id": st.session_state.user.id,
-                "nome": novo_treino
-            }).execute()
-            st.success("Treino criado!")
+            try:
+                response = supabase.table("workouts").insert({
+                    "user_id": st.session_state.user.id,
+                    "nome": novo_treino
+                }).execute()
+
+                st.success("✅ Treino criado!")
+                st.json(response.data)
+
+            except Exception as e:
+                st.error("❌ Erro ao criar treino")
+                st.write(e)
         else:
             st.warning("Digite um nome para o treino")
 
     # Buscar treinos
-    res = supabase.table("workouts") \
-        .select("*") \
-        .eq("user_id", st.session_state.user.id) \
-        .execute()
+    try:
+        res = supabase.table("workouts") \
+            .select("*") \
+            .eq("user_id", st.session_state.user.id) \
+            .execute()
 
-    st.write("### 📋 Seus treinos:")
+        st.write("### 📋 Seus treinos:")
 
-    if res.data:
-        for treino in res.data:
-            st.write(f"🏋️ {treino['nome']}")
-    else:
-        st.info("Você ainda não criou nenhum treino.")
+        if res.data:
+            for treino in res.data:
+                st.write(f"🏋️ {treino['nome']}")
+        else:
+            st.info("Você ainda não criou nenhum treino.")
+
+    except Exception as e:
+        st.error("❌ Erro ao buscar treinos")
+        st.write(e)
