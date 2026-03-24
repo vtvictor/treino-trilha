@@ -57,7 +57,6 @@ if not st.session_state.user:
 
     st.subheader("🔐 Acesso")
 
-    menu = st.radio("Escolha:", ["Login", "Cadastro"])
 
     email = st.text_input("Email")
     senha = st.text_input("Senha", type="password")
