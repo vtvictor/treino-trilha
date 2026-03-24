@@ -2,7 +2,7 @@ import streamlit as st
 from supabase import create_client
 
 # ==============================
-# 🔑 CONFIG (usar secrets depois)
+# 🔑 CONFIG (usar secrets)
 # ==============================
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -30,17 +30,6 @@ def login(email, senha):
         st.error("❌ Email ou senha inválidos")
 
 
-def cadastro(email, senha):
-    try:
-        supabase.auth.sign_up({
-            "email": email,
-            "password": senha
-        })
-        st.success("✅ Conta criada! Agora faça login.")
-    except:
-        st.error("❌ Erro ao criar conta")
-
-
 def logout():
     st.session_state.user = None
     st.success("Você saiu da conta")
@@ -51,26 +40,23 @@ def logout():
 st.title("🏋️ App de Treino")
 
 # ==============================
-# 🔐 SE NÃO ESTIVER LOGADO
+# 🔐 TELA DE LOGIN
 # ==============================
 if not st.session_state.user:
 
-    st.subheader("🔐 Acesso")
-
+    st.subheader("🔐 Login")
 
     email = st.text_input("Email")
     senha = st.text_input("Senha", type="password")
 
-    if menu == "Login":
-        if st.button("Entrar"):
+    if st.button("Entrar"):
+        if email and senha:
             login(email, senha)
-
-    if menu == "Cadastro":
-        if st.button("Criar conta"):
-            cadastro(email, senha)
+        else:
+            st.warning("Preencha email e senha")
 
 # ==============================
-# ✅ SE ESTIVER LOGADO
+# ✅ USUÁRIO LOGADO
 # ==============================
 else:
     st.success(f"👤 Logado como: {st.session_state.user.email}")
@@ -80,6 +66,12 @@ else:
 
     st.divider()
 
-    st.subheader("🏋️ Seu treino (em breve)")
+    st.subheader("🏋️ Área do usuário")
 
-    st.info("Aqui vamos colocar:\n- Treinos\n- Timer\n- Histórico")
+    st.info("""
+    Próximas funcionalidades:
+    - Criar treinos
+    - Adicionar exercícios
+    - Timer de descanso
+    - Histórico
+    """)
