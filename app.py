@@ -1,5 +1,6 @@
 import streamlit as st
 from supabase import create_client
+import time
 
 # ==============================
 # 🔑 CONFIG
@@ -18,6 +19,9 @@ if "session" not in st.session_state:
 
 if "treino_selecionado" not in st.session_state:
     st.session_state.treino_selecionado = None
+
+if "descanso_ate" not in st.session_state:
+    st.session_state.descanso_ate = None
 
 # ==============================
 # 🔐 CLIENTE AUTENTICADO
@@ -51,12 +55,10 @@ def login(email, senha):
     except Exception as e:
         st.error(f"❌ Erro no login: {e}")
 
-
 def logout():
     st.session_state.user = None
     st.session_state.session = None
     st.success("Você saiu da conta")
-
 
 def criar_treino(nome):
     db = get_supabase()
@@ -69,7 +71,6 @@ def criar_treino(nome):
     st.success("✅ Treino criado!")
     st.rerun()
 
-
 def deletar_treino(treino_id):
     db = get_supabase()
 
@@ -80,7 +81,6 @@ def deletar_treino(treino_id):
 
     st.success("🗑️ Treino excluído!")
     st.rerun()
-
 
 # ==============================
 # 🖥️ INTERFACE
@@ -117,7 +117,7 @@ else:
     db = get_supabase()
 
     # ==============================
-    # 📂 SE NÃO TEM TREINO ABERTO
+    # 📂 LISTA DE TREINOS
     # ==============================
     if not st.session_state.treino_selecionado:
 
@@ -140,7 +140,7 @@ else:
 
         if res.data:
             for treino in res.data:
-                col1, col2, col3 = st.columns([3, 1, 1])
+                col1, col2 = st.columns([4, 1])
 
                 with col1:
                     if st.button(treino["nome"], key=f"open_{treino['id']}"):
@@ -150,7 +150,6 @@ else:
                 with col2:
                     if st.button("🗑️", key=f"del_{treino['id']}"):
                         deletar_treino(treino["id"])
-
         else:
             st.info("Nenhum treino ainda")
 
@@ -168,14 +167,45 @@ else:
 
         st.divider()
 
-        # Criar exercício
+        # ==============================
+        # ⏱️ TIMER
+        # ==============================
+        st.subheader("⏱️ Timer de descanso")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("60s"):
+                st.session_state.descanso_ate = time.time() + 60
+
+        with col2:
+            if st.button("90s"):
+                st.session_state.descanso_ate = time.time() + 90
+
+        if st.session_state.descanso_ate:
+            restante = int(st.session_state.descanso_ate - time.time())
+
+            if restante > 0:
+                st.warning(f"⏳ Descanso: {restante}s")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.success("🔥 Bora pra próxima série!")
+                st.session_state.descanso_ate = None
+
+        st.divider()
+
+        # ==============================
+        # ➕ CRIAR EXERCÍCIO
+        # ==============================
         novo_ex = st.text_input("Nome do exercício")
 
         if st.button("➕ Adicionar exercício"):
             if novo_ex:
                 db.table("exercises").insert({
                     "workout_id": treino["id"],
-                    "nome": novo_ex
+                    "nome": novo_ex,
+                    "done": False
                 }).execute()
 
                 st.success("Exercício adicionado!")
@@ -183,7 +213,9 @@ else:
             else:
                 st.warning("Digite um nome")
 
-        # Listar exercícios
+        # ==============================
+        # 📋 LISTAR EXERCÍCIOS
+        # ==============================
         res = db.table("exercises") \
             .select("*") \
             .eq("workout_id", treino["id"]) \
@@ -193,12 +225,29 @@ else:
 
         if res.data:
             for ex in res.data:
-                col1, col2 = st.columns([4, 1])
+                col1, col2, col3 = st.columns([4, 1, 1])
 
                 with col1:
-                    st.write(f"💪 {ex['nome']}")
+                    checked = st.checkbox(
+                        ex["nome"],
+                        value=ex["done"],
+                        key=f"chk_{ex['id']}"
+                    )
+
+                    if checked != ex["done"]:
+                        db.table("exercises") \
+                            .update({"done": checked}) \
+                            .eq("id", ex["id"]) \
+                            .execute()
+
+                        st.rerun()
 
                 with col2:
+                    if st.button("⏱️", key=f"timer_{ex['id']}"):
+                        st.session_state.descanso_ate = time.time() + 60
+                        st.rerun()
+
+                with col3:
                     if st.button("🗑️", key=ex["id"]):
                         db.table("exercises") \
                             .delete() \
