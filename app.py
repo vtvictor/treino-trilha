@@ -2,7 +2,7 @@ import streamlit as st
 from supabase import create_client
 
 # ==============================
-# 🔑 CONFIG (usar secrets)
+# 🔑 CONFIG (via secrets)
 # ==============================
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -66,12 +66,34 @@ else:
 
     st.divider()
 
-    st.subheader("🏋️ Área do usuário")
+    # ==============================
+    # 🏋️ TREINOS
+    # ==============================
+    st.subheader("🏋️ Seus Treinos")
 
-    st.info("""
-    Próximas funcionalidades:
-    - Criar treinos
-    - Adicionar exercícios
-    - Timer de descanso
-    - Histórico
-    """)
+    # Criar treino
+    novo_treino = st.text_input("Nome do treino")
+
+    if st.button("➕ Criar treino"):
+        if novo_treino:
+            supabase.table("workouts").insert({
+                "user_id": st.session_state.user.id,
+                "nome": novo_treino
+            }).execute()
+            st.success("Treino criado!")
+        else:
+            st.warning("Digite um nome para o treino")
+
+    # Buscar treinos
+    res = supabase.table("workouts") \
+        .select("*") \
+        .eq("user_id", st.session_state.user.id) \
+        .execute()
+
+    st.write("### 📋 Seus treinos:")
+
+    if res.data:
+        for treino in res.data:
+            st.write(f"🏋️ {treino['nome']}")
+    else:
+        st.info("Você ainda não criou nenhum treino.")
