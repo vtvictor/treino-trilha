@@ -24,68 +24,54 @@ if "descanso_ate" not in st.session_state:
     st.session_state.descanso_ate = None
 
 # ==============================
-# 🔐 CLIENTE AUTENTICADO
+# 🔐 CLIENTE AUTH
 # ==============================
-def get_supabase():
+def get_db():
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
     if st.session_state.session:
         client.postgrest.auth(
             st.session_state.session.access_token
         )
-
     return client
 
 # ==============================
 # 🎯 FUNÇÕES
 # ==============================
 def login(email, senha):
-    try:
-        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-        res = client.auth.sign_in_with_password({
-            "email": email,
-            "password": senha
-        })
+    res = client.auth.sign_in_with_password({
+        "email": email,
+        "password": senha
+    })
 
-        st.session_state.user = res.user
-        st.session_state.session = res.session
-
-        st.success("✅ Login realizado!")
-    except Exception as e:
-        st.error(f"❌ Erro no login: {e}")
+    st.session_state.user = res.user
+    st.session_state.session = res.session
+    st.rerun()
 
 def logout():
     st.session_state.user = None
     st.session_state.session = None
-    st.success("Você saiu da conta")
-
-def criar_treino(nome):
-    db = get_supabase()
-
-    db.table("workouts").insert({
-        "user_id": st.session_state.user.id,
-        "nome": nome
-    }).execute()
-
-    st.success("✅ Treino criado!")
-    st.rerun()
-
-def deletar_treino(treino_id):
-    db = get_supabase()
-
-    db.table("workouts") \
-        .delete() \
-        .eq("id", treino_id) \
-        .execute()
-
-    st.success("🗑️ Treino excluído!")
     st.rerun()
 
 # ==============================
-# 🖥️ INTERFACE
+# 🎨 ESTILO
 # ==============================
-st.title("🏋️ App de Treino")
+st.set_page_config(page_title="Treino", layout="centered")
+
+st.markdown("""
+<style>
+.stButton>button {
+    border-radius: 10px;
+    padding: 0.5rem 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==============================
+# 🖥️ APP
+# ==============================
+st.title("🏋️ Treino")
 
 # ==============================
 # 🔐 LOGIN
@@ -98,138 +84,142 @@ if not st.session_state.user:
     senha = st.text_input("Senha", type="password")
 
     if st.button("Entrar"):
-        if email and senha:
-            login(email, senha)
-        else:
-            st.warning("Preencha email e senha")
+        login(email, senha)
 
 # ==============================
-# ✅ USUÁRIO LOGADO
+# ✅ LOGADO
 # ==============================
 else:
+    db = get_db()
+
     st.success(f"👤 {st.session_state.user.email}")
 
-    if st.button("🚪 Sair"):
+    if st.button("Sair"):
         logout()
 
     st.divider()
 
-    db = get_supabase()
-
     # ==============================
-    # 📂 LISTA DE TREINOS
+    # 📂 LISTA TREINOS
     # ==============================
     if not st.session_state.treino_selecionado:
 
         st.subheader("🏋️ Seus Treinos")
 
-        novo_treino = st.text_input("Nome do treino")
+        novo = st.text_input("Novo treino")
 
-        if st.button("➕ Criar treino"):
-            if novo_treino:
-                criar_treino(novo_treino)
-            else:
-                st.warning("Digite um nome")
+        if st.button("➕ Criar"):
+            if novo:
+                db.table("workouts").insert({
+                    "user_id": st.session_state.user.id,
+                    "nome": novo
+                }).execute()
+                st.rerun()
 
         res = db.table("workouts") \
             .select("*") \
             .eq("user_id", st.session_state.user.id) \
             .execute()
 
-        st.write("### 📋 Seus treinos:")
+        for t in res.data or []:
+            col1, col2 = st.columns([4,1])
 
-        if res.data:
-            for treino in res.data:
-                col1, col2 = st.columns([4, 1])
+            with col1:
+                if st.button(f"🏋️ {t['nome']}", key=t["id"]):
+                    st.session_state.treino_selecionado = t
+                    st.rerun()
 
-                with col1:
-                    if st.button(treino["nome"], key=f"open_{treino['id']}"):
-                        st.session_state.treino_selecionado = treino
-                        st.rerun()
-
-                with col2:
-                    if st.button("🗑️", key=f"del_{treino['id']}"):
-                        deletar_treino(treino["id"])
-        else:
-            st.info("Nenhum treino ainda")
+            with col2:
+                if st.button("🗑️", key=f"del_{t['id']}"):
+                    db.table("workouts").delete().eq("id", t["id"]).execute()
+                    st.rerun()
 
     # ==============================
-    # 💪 TELA DE EXERCÍCIOS
+    # 💪 TREINO
     # ==============================
     else:
         treino = st.session_state.treino_selecionado
 
         st.subheader(f"🏋️ {treino['nome']}")
 
-        if st.button("⬅️ Voltar"):
-            st.session_state.treino_selecionado = None
-            st.rerun()
+        col1, col2 = st.columns([1,1])
+
+        with col1:
+            if st.button("⬅️ Voltar"):
+                st.session_state.treino_selecionado = None
+                st.rerun()
+
+        with col2:
+            modo_edicao = st.toggle("✏️ Editar")
 
         st.divider()
 
         # ==============================
         # ⏱️ TIMER
         # ==============================
-        st.subheader("⏱️ Timer de descanso")
+        st.markdown("### ⏱️ Descanso")
 
-        col1, col2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
 
-        with col1:
-            if st.button("60s"):
-                st.session_state.descanso_ate = time.time() + 60
+        if c1.button("30s"):
+            st.session_state.descanso_ate = time.time() + 30
 
-        with col2:
-            if st.button("90s"):
-                st.session_state.descanso_ate = time.time() + 90
+        if c2.button("60s"):
+            st.session_state.descanso_ate = time.time() + 60
+
+        if c3.button("90s"):
+            st.session_state.descanso_ate = time.time() + 90
 
         if st.session_state.descanso_ate:
             restante = int(st.session_state.descanso_ate - time.time())
 
             if restante > 0:
-                st.warning(f"⏳ Descanso: {restante}s")
+                st.warning(f"⏳ {restante}s")
                 time.sleep(1)
                 st.rerun()
             else:
-                st.success("🔥 Bora pra próxima série!")
+                st.success("🔥 Bora!")
                 st.session_state.descanso_ate = None
 
         st.divider()
 
         # ==============================
-        # ➕ CRIAR EXERCÍCIO
+        # ➕ EXERCÍCIO (EDIÇÃO)
         # ==============================
-        novo_ex = st.text_input("Nome do exercício")
+        if modo_edicao:
+            novo_ex = st.text_input("Novo exercício")
 
-        if st.button("➕ Adicionar exercício"):
-            if novo_ex:
-                db.table("exercises").insert({
-                    "workout_id": treino["id"],
-                    "nome": novo_ex,
-                    "done": False
-                }).execute()
-
-                st.success("Exercício adicionado!")
-                st.rerun()
-            else:
-                st.warning("Digite um nome")
+            if st.button("Adicionar"):
+                if novo_ex:
+                    db.table("exercises").insert({
+                        "workout_id": treino["id"],
+                        "nome": novo_ex,
+                        "done": False
+                    }).execute()
+                    st.rerun()
 
         # ==============================
-        # 📋 LISTAR EXERCÍCIOS
+        # 📋 LISTA
         # ==============================
         res = db.table("exercises") \
             .select("*") \
             .eq("workout_id", treino["id"]) \
             .execute()
 
-        st.write("### 📋 Exercícios:")
+        st.markdown("### 💪 Exercícios")
 
         if res.data:
             for ex in res.data:
-                col1, col2, col3 = st.columns([4, 1, 1])
+
+                col1, col2, col3 = st.columns([4,1,1])
+
+                nome = ex["nome"]
+                if ex["done"]:
+                    nome = f"~~{nome}~~ ✅"
 
                 with col1:
                     checked = st.checkbox(
-                        ex["nome"],
+                        nome,
                         value=ex["done"],
                         key=f"chk_{ex['id']}"
                     )
@@ -240,20 +230,32 @@ else:
                             .eq("id", ex["id"]) \
                             .execute()
 
-                        st.rerun()
-
                 with col2:
-                    if st.button("⏱️", key=f"timer_{ex['id']}"):
+                    if st.button("⏱️", key=f"t_{ex['id']}"):
                         st.session_state.descanso_ate = time.time() + 60
                         st.rerun()
 
                 with col3:
-                    if st.button("🗑️", key=ex["id"]):
-                        db.table("exercises") \
-                            .delete() \
-                            .eq("id", ex["id"]) \
-                            .execute()
-
-                        st.rerun()
+                    if modo_edicao:
+                        if st.button("🗑️", key=ex["id"]):
+                            db.table("exercises") \
+                                .delete() \
+                                .eq("id", ex["id"]) \
+                                .execute()
+                            st.rerun()
         else:
-            st.info("Nenhum exercício ainda")
+            st.info("Nenhum exercício")
+
+        st.divider()
+
+        # ==============================
+        # 🏁 FINALIZAR
+        # ==============================
+        if st.button("✅ Finalizar treino"):
+            db.table("exercises") \
+                .update({"done": True}) \
+                .eq("workout_id", treino["id"]) \
+                .execute()
+
+            st.success("Treino finalizado!")
+            st.rerun()
