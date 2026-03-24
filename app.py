@@ -15,6 +15,22 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 if "user" not in st.session_state:
     st.session_state.user = None
 
+if "session" not in st.session_state:
+    st.session_state.session = None
+
+# ==============================
+# 🔐 RESTAURAR SESSÃO
+# ==============================
+if st.session_state.session:
+    try:
+        supabase.auth.set_session(
+            st.session_state.session.access_token,
+            st.session_state.session.refresh_token
+        )
+    except:
+        st.session_state.session = None
+        st.session_state.user = None
+
 # ==============================
 # 🎯 FUNÇÕES
 # ==============================
@@ -24,7 +40,10 @@ def login(email, senha):
             "email": email,
             "password": senha
         })
+
         st.session_state.user = res.user
+        st.session_state.session = res.session  # 🔥 ESSENCIAL
+
         st.success("✅ Login realizado!")
     except Exception as e:
         st.error(f"❌ Erro no login: {e}")
@@ -32,6 +51,7 @@ def login(email, senha):
 
 def logout():
     st.session_state.user = None
+    st.session_state.session = None
     st.success("Você saiu da conta")
 
 # ==============================
@@ -66,10 +86,6 @@ else:
 
     st.divider()
 
-    # 🔍 DEBUG (IMPORTANTE AGORA)
-    st.write("### 🧪 Debug usuário")
-    st.json(st.session_state.user)
-
     # ==============================
     # 🏋️ TREINOS
     # ==============================
@@ -81,13 +97,12 @@ else:
     if st.button("➕ Criar treino"):
         if novo_treino:
             try:
-                response = supabase.table("workouts").insert({
+                supabase.table("workouts").insert({
                     "user_id": st.session_state.user.id,
                     "nome": novo_treino
                 }).execute()
 
                 st.success("✅ Treino criado!")
-                st.json(response.data)
 
             except Exception as e:
                 st.error("❌ Erro ao criar treino")
