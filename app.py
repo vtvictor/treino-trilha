@@ -342,6 +342,7 @@ def build_history_stats(history_items):
                 "nome": item["nome"],
                 "count": 0,
                 "last_date": item.get("data"),
+                "exercise_total": item.get("exercise_total"),
             }
         stats[workout_key]["count"] += 1
         if item.get("data") and (
@@ -349,6 +350,7 @@ def build_history_stats(history_items):
             or str(item["data"]) > str(stats[workout_key]["last_date"])
         ):
             stats[workout_key]["last_date"] = item["data"]
+            stats[workout_key]["exercise_total"] = item.get("exercise_total")
     return stats
 
 
@@ -483,6 +485,8 @@ def finalizar_treino(treino):
             "user_id": st.session_state.user.id,
             "workout_id": treino["id"],
             "nome": treino["nome"],
+            "exercise_done": progress["completed_exercises"],
+            "exercise_total": progress["total_exercises"],
             "series_done": progress["completed_series"],
             "series_total": progress["total_series"],
         }
@@ -562,7 +566,7 @@ def render_history_tab(history_items, history_stats):
             <div class="summary-card">
                 <div class="exercise-name">{stat['nome']}</div>
                 <div class="exercise-meta">
-                    {stat['count']} execucoes · ultima em {parse_date(stat['last_date'])}
+                    {stat['count']}/{stat.get('exercise_total') or stat['count']} execucoes · ultima em {parse_date(stat['last_date'])}
                 </div>
             </div>
             """,
@@ -572,6 +576,11 @@ def render_history_tab(history_items, history_stats):
     st.markdown("<div class='eyebrow'>Ultimas sessoes</div>", unsafe_allow_html=True)
     for item in history_items:
         series_copy = ""
+        exercise_copy = ""
+        if item.get("exercise_total"):
+            exercise_copy = (
+                f" · {int(item.get('exercise_done', 0))}/{int(item['exercise_total'])} exercicios"
+            )
         if item.get("series_total"):
             series_copy = (
                 f" · {int(item.get('series_done', 0))}/{int(item['series_total'])} series"
@@ -581,7 +590,7 @@ def render_history_tab(history_items, history_stats):
             <div class="card">
                 <div style="font-weight: 700; font-size: 1.08rem;">{item['nome']}</div>
                 <div class="exercise-meta">
-                    Concluido em {parse_date(item['data'])}{series_copy}
+                    Concluido em {parse_date(item['data'])}{exercise_copy}{series_copy}
                 </div>
             </div>
             """,
