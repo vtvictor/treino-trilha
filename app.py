@@ -150,27 +150,30 @@ def inject_styles():
             letter-spacing: 0.12em;
         }
 
-        div[data-testid="stSelectSlider"] {
-            margin-top: -0.35rem;
-            margin-bottom: -0.1rem;
+        .series-choices {
+            margin-top: 0.15rem;
+            margin-bottom: 0.15rem;
         }
 
-        div[data-testid="stSelectSlider"] > div[data-baseweb="slider"] {
-            padding-left: 0.1rem;
-            padding-right: 0.1rem;
+        .series-choices div.stButton > button:first-child {
+            height: 2.2rem;
+            min-width: 2.2rem;
+            margin-top: 0.2rem;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            color: #cbd5e1;
+            box-shadow: none;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0;
         }
 
-        div[data-testid="stSelectSlider"] [role="slider"] {
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
-        }
-
-        div[data-testid="stSelectSlider"] [data-testid="stTickBar"] {
-            transform: scaleY(0.9);
-        }
-
-        div[data-testid="stSelectSlider"] p {
-            font-size: 0.72rem !important;
-            color: #94a3b8 !important;
+        .series-choices-active div.stButton > button:first-child {
+            background: linear-gradient(135deg, #22c55e, #15803d);
+            color: #f8fafc;
+            border-color: transparent;
+            box-shadow: 0 8px 18px rgba(34, 197, 94, 0.18);
         }
 
         .timer-value {
@@ -445,9 +448,21 @@ def atualizar_progresso_exercicio(exercise, series_done):
     ).eq("id", exercise["id"]).execute()
 
 
-def atualizar_progresso_exercicio_slider(exercise):
-    slider_key = f"series_control_{exercise['id']}"
-    atualizar_progresso_exercicio(exercise, st.session_state[slider_key])
+def get_series_done_key(exercise_id):
+    return f"series_control_{exercise_id}"
+
+
+def get_current_series_done(exercise):
+    series_key = get_series_done_key(exercise["id"])
+    if series_key not in st.session_state:
+        st.session_state[series_key] = exercise["series_done"]
+    return int(st.session_state[series_key])
+
+
+def set_exercise_series_done(exercise, series_done):
+    clamped_value = max(0, min(int(series_done), exercise["series_total"]))
+    st.session_state[get_series_done_key(exercise["id"])] = clamped_value
+    atualizar_progresso_exercicio(exercise, clamped_value)
 
 
 def finalizar_treino(treino):
@@ -723,12 +738,13 @@ def render_workout_summary(progress, history_stats, treino_id):
 
 def render_exercise_progress(exercise):
     dots = []
+    current_series_done = get_current_series_done(exercise)
     for index in range(exercise["series_total"]):
-        dots.append("●" if index < exercise["series_done"] else "○")
-    dot_class = "dot-row done" if exercise["done"] else "dot-row"
+        dots.append("●" if index < current_series_done else "○")
+    dot_class = "dot-row done" if current_series_done >= exercise["series_total"] else "dot-row"
     st.markdown(
         f"""
-        <div class="progress-copy">{exercise['series_done']}/{exercise['series_total']} series</div>
+        <div class="progress-copy">{current_series_done}/{exercise['series_total']} series</div>
         <div class="{dot_class}">{' '.join(dots)}</div>
         """,
         unsafe_allow_html=True,
@@ -744,9 +760,11 @@ def render_exercise_list(treino, modo_edicao):
         return exercises
 
     for exercise in exercises:
-        card_class = "card-done" if exercise["done"] else "card"
-        name_class = "exercise-name done" if exercise["done"] else "exercise-name"
-        status_text = "Concluido" if exercise["done"] else "Em andamento"
+        current_series_done = get_current_series_done(exercise)
+        is_done = current_series_done >= exercise["series_total"]
+        card_class = "card-done" if is_done else "card"
+        name_class = "exercise-name done" if is_done else "exercise-name"
+        status_text = "Concluido" if is_done else "Em andamento"
 
         st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
         top_left, top_right = st.columns([4, 2])
@@ -762,20 +780,23 @@ def render_exercise_list(treino, modo_edicao):
             render_exercise_progress(exercise)
 
         st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
-        slider_key = f"series_control_{exercise['id']}"
-        if slider_key not in st.session_state:
-            st.session_state[slider_key] = exercise["series_done"]
-
-        st.select_slider(
-            "",
-            options=list(range(exercise["series_total"] + 1)),
-            value=st.session_state[slider_key],
-            key=slider_key,
-            label_visibility="collapsed",
-            format_func=lambda value, total=exercise["series_total"]: f"{value}/{total}",
-            on_change=atualizar_progresso_exercicio_slider,
-            args=(exercise,),
-        )
+        series_cols = st.columns(exercise["series_total"] + 1)
+        for index, column in enumerate(series_cols):
+            button_label = "0" if index == 0 else str(index)
+            wrapper_class = (
+                "series-choices series-choices-active"
+                if index == current_series_done
+                else "series-choices"
+            )
+            column.markdown(f"<div class='{wrapper_class}'>", unsafe_allow_html=True)
+            if column.button(
+                button_label,
+                key=f"series_button_{exercise['id']}_{index}",
+                use_container_width=True,
+            ):
+                set_exercise_series_done(exercise, index)
+                st.rerun()
+            column.markdown("</div>", unsafe_allow_html=True)
 
         if modo_edicao:
             if st.button(
