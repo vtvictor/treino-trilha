@@ -79,8 +79,8 @@ def inject_styles():
 
         .card, .card-done, .timer-card, .summary-card {
             border-radius: 16px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
+            padding: 0.85rem;
+            margin-bottom: 0.65rem;
             border: 1px solid rgba(148, 163, 184, 0.16);
         }
 
@@ -107,6 +107,8 @@ def inject_styles():
         .exercise-name {
             font-weight: 600;
             color: #f8fafc;
+            font-size: 0.96rem;
+            line-height: 1.2;
         }
 
         .exercise-name.done {
@@ -115,22 +117,24 @@ def inject_styles():
         }
 
         .exercise-meta {
-            font-size: 0.82rem;
+            font-size: 0.76rem;
             color: #94a3b8;
-            margin-top: 0.18rem;
+            margin-top: 0.12rem;
         }
 
         .progress-copy {
-            font-size: 1rem;
+            font-size: 0.92rem;
             font-weight: 700;
             color: #f8fafc;
+            text-align: right;
         }
 
         .dot-row {
-            margin-top: 0.45rem;
-            letter-spacing: 0.18rem;
+            margin-top: 0.22rem;
+            letter-spacing: 0.1rem;
             color: #94a3b8;
-            font-size: 1rem;
+            font-size: 0.82rem;
+            text-align: right;
         }
 
         .dot-row.done {
@@ -138,12 +142,35 @@ def inject_styles():
         }
 
         .series-chip-label {
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             color: #94a3b8;
-            margin-top: 0.7rem;
-            margin-bottom: -0.15rem;
+            margin-top: 0.5rem;
+            margin-bottom: -0.2rem;
             text-transform: uppercase;
             letter-spacing: 0.12em;
+        }
+
+        div[data-testid="stSelectSlider"] {
+            margin-top: -0.35rem;
+            margin-bottom: -0.1rem;
+        }
+
+        div[data-testid="stSelectSlider"] > div[data-baseweb="slider"] {
+            padding-left: 0.1rem;
+            padding-right: 0.1rem;
+        }
+
+        div[data-testid="stSelectSlider"] [role="slider"] {
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+        }
+
+        div[data-testid="stSelectSlider"] [data-testid="stTickBar"] {
+            transform: scaleY(0.9);
+        }
+
+        div[data-testid="stSelectSlider"] p {
+            font-size: 0.72rem !important;
+            color: #94a3b8 !important;
         }
 
         .timer-value {
@@ -416,6 +443,11 @@ def atualizar_progresso_exercicio(exercise, series_done):
             "done": series_done >= exercise["series_total"],
         }
     ).eq("id", exercise["id"]).execute()
+
+
+def atualizar_progresso_exercicio_slider(exercise):
+    slider_key = f"series_control_{exercise['id']}"
+    atualizar_progresso_exercicio(exercise, st.session_state[slider_key])
 
 
 def finalizar_treino(treino):
@@ -730,26 +762,22 @@ def render_exercise_list(treino, modo_edicao):
             render_exercise_progress(exercise)
 
         st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
-        series_cols = st.columns(exercise["series_total"])
-        for index, column in enumerate(series_cols, start=1):
-            chip_class = (
-                "series-chip series-chip-active"
-                if index <= exercise["series_done"]
-                else "series-chip"
-            )
-            column.markdown(f"<div class='{chip_class}'>", unsafe_allow_html=True)
-            if column.button(
-                str(index),
-                key=f"series_{exercise['id']}_{index}",
-                use_container_width=True,
-            ):
-                novo_total = 0 if exercise["series_done"] == index else index
-                atualizar_progresso_exercicio(exercise, novo_total)
-                st.rerun()
-            column.markdown("</div>", unsafe_allow_html=True)
+        slider_key = f"series_control_{exercise['id']}"
+        if slider_key not in st.session_state:
+            st.session_state[slider_key] = exercise["series_done"]
+
+        st.select_slider(
+            "",
+            options=list(range(exercise["series_total"] + 1)),
+            value=st.session_state[slider_key],
+            key=slider_key,
+            label_visibility="collapsed",
+            format_func=lambda value, total=exercise["series_total"]: f"{value}/{total}",
+            on_change=atualizar_progresso_exercicio_slider,
+            args=(exercise,),
+        )
 
         if modo_edicao:
-            st.caption("Toque na serie atual para zerar.")
             if st.button(
                 "Excluir",
                 key=f"delete_{exercise['id']}",
@@ -757,8 +785,6 @@ def render_exercise_list(treino, modo_edicao):
             ):
                 excluir_exercicio(exercise["id"])
                 st.rerun()
-        elif exercise["series_done"] > 0:
-            st.caption("Toque na serie atual para zerar.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
