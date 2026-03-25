@@ -354,9 +354,17 @@ def build_history_stats(history_items):
 
 def summarize_workout_progress(exercises):
     total_exercises = len(exercises)
-    completed_exercises = sum(1 for exercise in exercises if exercise["done"])
-    total_series = sum(exercise["series_total"] for exercise in exercises)
-    completed_series = sum(exercise["series_done"] for exercise in exercises)
+    completed_exercises = 0
+    total_series = 0
+    completed_series = 0
+
+    for exercise in exercises:
+        current_series_done = get_current_series_done(exercise)
+        total_series += exercise["series_total"]
+        completed_series += current_series_done
+        if current_series_done >= exercise["series_total"]:
+            completed_exercises += 1
+
     remaining_exercises = max(total_exercises - completed_exercises, 0)
     return {
         "total_exercises": total_exercises,
