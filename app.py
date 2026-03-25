@@ -26,9 +26,22 @@ def get_db():
 # AUTH
 def login(email, senha):
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    res = client.auth.sign_in_with_password({"email": email, "password": senha})
-    st.session_state.user = res.user
-    st.session_state.session = res.session
+    
+    try:
+        res = client.auth.sign_in_with_password({
+            "email": email,
+            "password": senha
+        })
+        
+        if res.user:
+            st.session_state.user = res.user
+            st.session_state.session = res.session
+            return True
+        else:
+            return False
+            
+    except:
+        return False
 
 def logout():
     st.session_state.user = None
@@ -51,13 +64,16 @@ def atualizar_exercicio(eid, done):
 
 def finalizar_treino(treino):
     db = get_db()
+
     db.table("workout_history").insert({
         "user_id": st.session_state.user.id,
         "workout_id": treino["id"],
         "nome": treino["nome"]
     }).execute()
 
-    db.table("exercises").update({"done": True}).eq("workout_id", treino["id"]).execute()
+    db.table("exercises").update({
+        "done": True
+    }).eq("workout_id", treino["id"]).execute()
 
     st.session_state.treino_selecionado = None
     st.success("✅ Treino finalizado!")
@@ -77,7 +93,7 @@ td,th {padding:8px;border-bottom:1px solid #ddd;}
 # APP
 st.title("🏋️ Treino em Foco")
 
-# LOGIN (FORM CORRIGIDO)
+# LOGIN
 if not st.session_state.user:
 
     with st.form("login_form"):
@@ -86,10 +102,10 @@ if not st.session_state.user:
         submitted = st.form_submit_button("Entrar")
 
         if submitted:
-            try:
-                login(email, senha)
+            sucesso = login(email, senha)
+            if sucesso:
                 st.rerun()
-            except:
+            else:
                 st.error("Email ou senha inválidos")
 
 # LOGADO
@@ -105,7 +121,6 @@ else:
 
     # HISTÓRICO
     if aba == "Histórico":
-
         st.subheader("📋 Histórico")
 
         res = db.table("workout_history")\
@@ -186,7 +201,7 @@ else:
                     st.success("🔥 Bora!")
                     st.session_state.descanso_ate = None
 
-            # ADICIONAR EXERCÍCIO
+            # EDITAR
             if modo_edicao:
                 novo_ex = st.text_input("Novo exercício")
                 if st.button("Adicionar"):
