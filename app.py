@@ -41,6 +41,8 @@ def login(email, senha):
 def logout():
     st.session_state.user = None
     st.session_state.session = None
+    st.session_state.treino_selecionado = None
+    st.experimental_rerun()
 
 def criar_treino(nome):
     db = get_db()
@@ -66,6 +68,7 @@ def finalizar_treino(treino):
     db.table("exercises").update({"done": True}).eq("workout_id", treino["id"]).execute()
     st.session_state.treino_selecionado = None
     st.success("✅ Treino finalizado e salvo no histórico!")
+    st.experimental_rerun()
 
 # ==============================
 # ESTILO CLEAN
@@ -91,13 +94,16 @@ if not st.session_state.user:
     email = st.text_input("Email")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
-        login(email, senha)
+        try:
+            login(email, senha)
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Erro no login: {e}")
 else:
     db = get_db()
     st.success(f"👤 {st.session_state.user.email}")
     if st.button("🚪 Sair"):
         logout()
-        st.experimental_rerun()
 
     # MENU
     aba = st.radio("Menu", ["Treinos","Histórico"], horizontal=True)
@@ -124,8 +130,13 @@ else:
             st.subheader("🏋️ Seus Treinos")
             novo = st.text_input("Novo treino")
             if st.button("➕ Criar") and novo:
-                criar_treino(novo)
-                st.experimental_rerun()
+                try:
+                    criar_treino(novo)
+                    st.success("Treino criado!")
+                    st.experimental_rerun()
+                except Exception as e:
+                    st.error(f"Erro ao criar treino: {e}")
+
             res = db.table("workouts").select("*").eq("user_id", st.session_state.user.id).execute()
             for t in res.data or []:
                 col1, col2 = st.columns([4,1])
@@ -170,7 +181,7 @@ else:
                         db.table("exercises").insert({"workout_id":treino["id"],"nome":novo_ex,"done":False}).execute()
                         st.experimental_rerun()
 
-            # LISTA DE EXERCÍCIOS COM CHECKBOX FUNCIONANDO
+            # LISTA DE EXERCÍCIOS COM CHECKBOX FUNCIONAL
             res=db.table("exercises").select("*").eq("workout_id", treino["id"]).execute()
             st.markdown("### 💪 Exercícios")
             if res.data:
@@ -201,4 +212,3 @@ else:
             # FINALIZAR TREINO
             if st.button("✅ Finalizar treino"):
                 finalizar_treino(treino)
-                st.experimental_rerun()
