@@ -77,7 +77,7 @@ def inject_styles():
             margin-bottom: 0.2rem;
         }
 
-        .card, .card-done, .timer-card {
+        .card, .card-done, .timer-card, .summary-card {
             border-radius: 16px;
             padding: 1rem;
             margin-bottom: 0.8rem;
@@ -99,8 +99,12 @@ def inject_styles():
                 linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(15, 23, 42, 0.92));
         }
 
+        .summary-card {
+            background:
+                linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.95));
+        }
+
         .exercise-name {
-            padding-top: 0.55rem;
             font-weight: 600;
             color: #f8fafc;
         }
@@ -113,7 +117,33 @@ def inject_styles():
         .exercise-meta {
             font-size: 0.82rem;
             color: #94a3b8;
-            margin-top: 0.15rem;
+            margin-top: 0.18rem;
+        }
+
+        .progress-copy {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .dot-row {
+            margin-top: 0.45rem;
+            letter-spacing: 0.18rem;
+            color: #94a3b8;
+            font-size: 1rem;
+        }
+
+        .dot-row.done {
+            color: #4ade80;
+        }
+
+        .series-chip-label {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-top: 0.7rem;
+            margin-bottom: -0.15rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
         }
 
         .timer-value {
@@ -139,6 +169,31 @@ def inject_styles():
             transform: translateY(-1px);
         }
 
+        div[data-testid="column"] .series-chip button {
+            height: 2.45rem !important;
+            min-width: 2.45rem;
+            margin-top: 0.22rem;
+            border-radius: 999px !important;
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            color: #cbd5e1;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 0;
+        }
+
+        div[data-testid="column"] .series-chip-active button {
+            background: linear-gradient(135deg, #22c55e, #15803d) !important;
+            color: #f8fafc !important;
+            border-color: transparent !important;
+            box-shadow: 0 8px 18px rgba(34, 197, 94, 0.22);
+        }
+
+        div[data-testid="column"] .series-chip button:hover {
+            border-color: rgba(96, 165, 250, 0.45);
+        }
+
         [data-testid="stForm"] div.stButton > button:first-child {
             background-color: #2563eb;
             color: white;
@@ -151,18 +206,16 @@ def inject_styles():
             font-size: 1.05rem;
         }
 
-        .stCheckbox {
-            margin-bottom: -8px;
-        }
-
-        div[data-baseweb="input"] > div {
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="select"] > div {
             background-color: rgba(15, 23, 42, 0.9);
             color: #f8fafc;
             border-color: rgba(148, 163, 184, 0.25);
         }
 
         div[data-testid="stRadio"] label,
-        div[data-testid="stToggle"] label {
+        div[data-testid="stToggle"] label,
+        div[data-testid="stNumberInput"] label {
             color: #e5e7eb !important;
         }
 
@@ -190,6 +243,30 @@ def get_db():
     return client
 
 
+def parse_date(date_value):
+    if not date_value:
+        return ""
+    return str(date_value)[:10]
+
+
+def normalize_exercise(exercise):
+    series_total = exercise.get("series_total")
+    if series_total is None:
+        series_total = 1
+    series_total = max(int(series_total), 1)
+
+    series_done = exercise.get("series_done")
+    if series_done is None:
+        series_done = series_total if exercise.get("done") else 0
+    series_done = max(0, min(int(series_done), series_total))
+
+    normalized = dict(exercise)
+    normalized["series_total"] = series_total
+    normalized["series_done"] = series_done
+    normalized["done"] = series_done >= series_total
+    return normalized
+
+
 def fetch_workouts():
     response = (
         get_db()
@@ -211,7 +288,7 @@ def fetch_exercises(workout_id):
         .order("id")
         .execute()
     )
-    return response.data or []
+    return [normalize_exercise(item) for item in (response.data or [])]
 
 
 def fetch_history():
@@ -226,9 +303,43 @@ def fetch_history():
     return response.data or []
 
 
-def clear_exercise_checkbox_state(exercises):
+def build_history_stats(history_items):
+    stats = {}
+    for item in history_items:
+        workout_key = item.get("workout_id") or item["nome"]
+        if workout_key not in stats:
+            stats[workout_key] = {
+                "nome": item["nome"],
+                "count": 0,
+                "last_date": item.get("data"),
+            }
+        stats[workout_key]["count"] += 1
+        if item.get("data") and (
+            not stats[workout_key]["last_date"]
+            or str(item["data"]) > str(stats[workout_key]["last_date"])
+        ):
+            stats[workout_key]["last_date"] = item["data"]
+    return stats
+
+
+def summarize_workout_progress(exercises):
+    total_exercises = len(exercises)
+    completed_exercises = sum(1 for exercise in exercises if exercise["done"])
+    total_series = sum(exercise["series_total"] for exercise in exercises)
+    completed_series = sum(exercise["series_done"] for exercise in exercises)
+    remaining_exercises = max(total_exercises - completed_exercises, 0)
+    return {
+        "total_exercises": total_exercises,
+        "completed_exercises": completed_exercises,
+        "remaining_exercises": remaining_exercises,
+        "total_series": total_series,
+        "completed_series": completed_series,
+    }
+
+
+def clear_exercise_widget_state(exercises):
     for exercise in exercises or []:
-        st.session_state.pop(f"chk_{exercise['id']}", None)
+        st.session_state.pop(f"series_control_{exercise['id']}", None)
 
 
 def reset_timer():
@@ -255,7 +366,7 @@ def login(email, senha):
 def logout():
     treino = st.session_state.treino_selecionado
     if treino:
-        clear_exercise_checkbox_state(fetch_exercises(treino["id"]))
+        clear_exercise_widget_state(fetch_exercises(treino["id"]))
 
     st.session_state.user = None
     st.session_state.session = None
@@ -281,19 +392,15 @@ def editar_nome_treino(workout_id, novo_nome):
     ).execute()
 
 
-def atualizar_exercicio(exercise_id, done):
-    get_db().table("exercises").update({"done": done}).eq(
-        "id", exercise_id
-    ).execute()
-
-
-def atualizar_exercicio_callback(exercise_id):
-    atualizar_exercicio(exercise_id, st.session_state[f"chk_{exercise_id}"])
-
-
-def adicionar_exercicio(workout_id, nome):
+def adicionar_exercicio(workout_id, nome, series_total):
     get_db().table("exercises").insert(
-        {"workout_id": workout_id, "nome": nome, "done": False}
+        {
+            "workout_id": workout_id,
+            "nome": nome,
+            "done": False,
+            "series_total": int(series_total),
+            "series_done": 0,
+        }
     ).execute()
 
 
@@ -301,22 +408,35 @@ def excluir_exercicio(exercise_id):
     get_db().table("exercises").delete().eq("id", exercise_id).execute()
 
 
+def atualizar_progresso_exercicio(exercise, series_done):
+    series_done = max(0, min(int(series_done), exercise["series_total"]))
+    get_db().table("exercises").update(
+        {
+            "series_done": series_done,
+            "done": series_done >= exercise["series_total"],
+        }
+    ).eq("id", exercise["id"]).execute()
+
+
 def finalizar_treino(treino):
     db = get_db()
     exercises = fetch_exercises(treino["id"])
+    progress = summarize_workout_progress(exercises)
 
     db.table("workout_history").insert(
         {
             "user_id": st.session_state.user.id,
             "workout_id": treino["id"],
             "nome": treino["nome"],
+            "series_done": progress["completed_series"],
+            "series_total": progress["total_series"],
         }
     ).execute()
-    db.table("exercises").update({"done": False}).eq(
+    db.table("exercises").update({"done": False, "series_done": 0}).eq(
         "workout_id", treino["id"]
     ).execute()
 
-    clear_exercise_checkbox_state(exercises)
+    clear_exercise_widget_state(exercises)
     st.session_state.treino_selecionado = None
     reset_timer()
     st.success("Treino finalizado!")
@@ -326,7 +446,7 @@ def finalizar_treino(treino):
 def voltar_para_lista():
     treino = st.session_state.treino_selecionado
     if treino:
-        clear_exercise_checkbox_state(fetch_exercises(treino["id"]))
+        clear_exercise_widget_state(fetch_exercises(treino["id"]))
     st.session_state.treino_selecionado = None
     st.session_state.editando_treino_id = None
     reset_timer()
@@ -337,7 +457,7 @@ def render_login():
     st.markdown(
         """
         <div class="eyebrow">Treino em Foco</div>
-        <h1 style="text-align: center;">Seu treino, sem distrações</h1>
+        <h1 style="text-align: center;">Seu treino, sem distracoes</h1>
         """,
         unsafe_allow_html=True,
     )
@@ -367,28 +487,54 @@ def render_header():
             logout()
 
 
-def render_history_tab():
+def render_history_tab(history_items, history_stats):
     st.markdown("<h3>Historico</h3>", unsafe_allow_html=True)
-    history_items = fetch_history()
 
     if not history_items:
         st.info("Nenhum treino finalizado ainda.")
         return
 
+    st.markdown("<div class='eyebrow'>Resumo</div>", unsafe_allow_html=True)
+    sorted_stats = sorted(
+        history_stats.values(),
+        key=lambda item: (item["count"], str(item["last_date"] or "")),
+        reverse=True,
+    )
+
+    for stat in sorted_stats:
+        st.markdown(
+            f"""
+            <div class="summary-card">
+                <div class="exercise-name">{stat['nome']}</div>
+                <div class="exercise-meta">
+                    {stat['count']} execucoes · ultima em {parse_date(stat['last_date'])}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div class='eyebrow'>Ultimas sessoes</div>", unsafe_allow_html=True)
     for item in history_items:
-        data_formatada = item["data"][:10]
+        series_copy = ""
+        if item.get("series_total"):
+            series_copy = (
+                f" · {int(item.get('series_done', 0))}/{int(item['series_total'])} series"
+            )
         st.markdown(
             f"""
             <div class="card">
                 <div style="font-weight: 700; font-size: 1.08rem;">{item['nome']}</div>
-                <div class="exercise-meta">Concluido em {data_formatada}</div>
+                <div class="exercise-meta">
+                    Concluido em {parse_date(item['data'])}{series_copy}
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
 
-def render_workout_list():
+def render_workout_list(history_stats):
     st.markdown("<h3>Meus Treinos</h3>", unsafe_allow_html=True)
 
     with st.form("novo_treino", clear_on_submit=True):
@@ -407,14 +553,26 @@ def render_workout_list():
 
     workouts = fetch_workouts()
     if not workouts:
-        st.info("Crie seu primeiro treino para começar.")
+        st.info("Crie seu primeiro treino para comecar.")
         return
 
     for treino in workouts:
         is_editing = st.session_state.editando_treino_id == treino["id"]
+        stat = history_stats.get(
+            treino["id"], {"count": 0, "last_date": None, "nome": treino["nome"]}
+        )
+
         st.markdown('<div class="card">', unsafe_allow_html=True)
 
         if not is_editing:
+            st.markdown(
+                f"""
+                <div class="exercise-meta">
+                    {stat['count']} execucoes · ultima em {parse_date(stat['last_date']) or '--'}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             c1, c2, c3 = st.columns([3, 1, 1])
             if c1.button(
                 treino["nome"],
@@ -468,7 +626,7 @@ def render_timer_section():
         st.rerun()
 
     if not st.session_state.descanso_ate:
-        st.caption("Escolha um descanso quando quiser. O cronometro nao trava mais a tela.")
+        st.caption("Escolha um descanso quando quiser. O cronometro nao trava a tela.")
         return
 
     restante = max(0, int(st.session_state.descanso_ate - time.time()))
@@ -496,9 +654,7 @@ def render_timer_section():
         <div class="timer-card">
             <div class="eyebrow">Descanso em andamento</div>
             <div class="timer-value">{restante}s</div>
-            <div class="exercise-meta">
-                O tempo continua correndo sem bloquear os outros botoes.
-            </div>
+            <div class="exercise-meta">O tempo continua correndo sem bloquear o resto.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -513,55 +669,103 @@ def render_timer_section():
         st.rerun()
 
 
+def render_workout_summary(progress, history_stats, treino_id):
+    stat = history_stats.get(treino_id, {"count": 0, "last_date": None})
+    st.markdown(
+        f"""
+        <div class="summary-card">
+            <div class="eyebrow">Resumo do treino</div>
+            <div class="progress-copy">
+                {progress['completed_exercises']}/{progress['total_exercises']} exercicios concluidos
+            </div>
+            <div class="exercise-meta">
+                {progress['remaining_exercises']} restantes ·
+                {progress['completed_series']}/{progress['total_series']} series feitas ·
+                {stat['count']} execucoes anteriores
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_exercise_progress(exercise):
+    dots = []
+    for index in range(exercise["series_total"]):
+        dots.append("●" if index < exercise["series_done"] else "○")
+    dot_class = "dot-row done" if exercise["done"] else "dot-row"
+    st.markdown(
+        f"""
+        <div class="progress-copy">{exercise['series_done']}/{exercise['series_total']} series</div>
+        <div class="{dot_class}">{' '.join(dots)}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_exercise_list(treino, modo_edicao):
     st.markdown("<h3>Exercicios</h3>", unsafe_allow_html=True)
     exercises = fetch_exercises(treino["id"])
 
     if not exercises:
         st.info("Lista vazia.")
-        return
+        return exercises
 
-    for ex in exercises:
-        key = f"chk_{ex['id']}"
-        if key not in st.session_state:
-            st.session_state[key] = ex["done"]
-
-        is_done = bool(st.session_state[key])
-        card_class = "card-done" if is_done else "card"
-        status_text = "Concluido" if is_done else "Pendente"
-        name_class = "exercise-name done" if is_done else "exercise-name"
+    for exercise in exercises:
+        card_class = "card-done" if exercise["done"] else "card"
+        name_class = "exercise-name done" if exercise["done"] else "exercise-name"
+        status_text = "Concluido" if exercise["done"] else "Em andamento"
 
         st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
-        col_check, col_text, col_del = st.columns([1, 4, 1])
+        top_left, top_right = st.columns([4, 2])
+        with top_left:
+            st.markdown(
+                f"""
+                <div class="{name_class}">{exercise['nome']}</div>
+                <div class="exercise-meta">{status_text}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with top_right:
+            render_exercise_progress(exercise)
 
-        col_check.checkbox(
-            "",
-            key=key,
-            label_visibility="collapsed",
-            on_change=atualizar_exercicio_callback,
-            args=(ex["id"],),
-        )
-
-        col_text.markdown(
-            f"""
-            <div class="{name_class}">{ex['nome']}</div>
-            <div class="exercise-meta">{status_text}</div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
+        series_cols = st.columns(exercise["series_total"])
+        for index, column in enumerate(series_cols, start=1):
+            chip_class = (
+                "series-chip series-chip-active"
+                if index <= exercise["series_done"]
+                else "series-chip"
+            )
+            column.markdown(f"<div class='{chip_class}'>", unsafe_allow_html=True)
+            if column.button(
+                str(index),
+                key=f"series_{exercise['id']}_{index}",
+                use_container_width=True,
+            ):
+                novo_total = 0 if exercise["series_done"] == index else index
+                atualizar_progresso_exercicio(exercise, novo_total)
+                st.rerun()
+            column.markdown("</div>", unsafe_allow_html=True)
 
         if modo_edicao:
-            if col_del.button("Excluir", key=f"ex_del_{ex['id']}"):
-                st.session_state.pop(key, None)
-                excluir_exercicio(ex["id"])
+            st.caption("Toque na serie atual para zerar.")
+            if st.button(
+                "Excluir",
+                key=f"delete_{exercise['id']}",
+                use_container_width=True,
+            ):
+                excluir_exercicio(exercise["id"])
                 st.rerun()
-        else:
-            col_del.write("")
+        elif exercise["series_done"] > 0:
+            st.caption("Toque na serie atual para zerar.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
+    return exercises
 
-def render_workout_detail():
+
+def render_workout_detail(history_stats):
     treino = st.session_state.treino_selecionado
 
     col_voltar, col_titulo = st.columns([1, 5])
@@ -576,16 +780,29 @@ def render_workout_detail():
 
     if modo_edicao:
         with st.form("add_ex", clear_on_submit=True):
-            ex_nome = st.text_input(
-                "Adicionar exercicio",
-                label_visibility="collapsed",
-                placeholder="Ex: Supino",
-            )
+            col_nome, col_series = st.columns([3, 1.2])
+            with col_nome:
+                ex_nome = st.text_input(
+                    "Adicionar exercicio",
+                    label_visibility="collapsed",
+                    placeholder="Ex: Leg 45",
+                )
+            with col_series:
+                series_total = st.number_input(
+                    "Series",
+                    min_value=1,
+                    max_value=12,
+                    value=3,
+                    step=1,
+                )
             if st.form_submit_button("Adicionar", use_container_width=True):
                 if ex_nome.strip():
-                    adicionar_exercicio(treino["id"], ex_nome.strip())
+                    adicionar_exercicio(treino["id"], ex_nome.strip(), series_total)
                     st.rerun()
 
+    exercises = fetch_exercises(treino["id"])
+    progress = summarize_workout_progress(exercises)
+    render_workout_summary(progress, history_stats, treino["id"])
     render_exercise_list(treino, modo_edicao)
 
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -594,6 +811,9 @@ def render_workout_detail():
 
 
 def render_authenticated_app():
+    history_items = fetch_history()
+    history_stats = build_history_stats(history_items)
+
     render_header()
     aba = st.radio(
         "",
@@ -603,13 +823,13 @@ def render_authenticated_app():
     )
 
     if aba == "Historico":
-        render_history_tab()
+        render_history_tab(history_items, history_stats)
         return
 
     if st.session_state.treino_selecionado:
-        render_workout_detail()
+        render_workout_detail(history_stats)
     else:
-        render_workout_list()
+        render_workout_list(history_stats)
 
 
 inject_styles()
