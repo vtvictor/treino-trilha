@@ -319,10 +319,7 @@ def get_browser_auth_session():
     if local_storage is None:
         return None
 
-    raw_value = local_storage.getItem(
-        AUTH_STORAGE_KEY,
-        key="local_storage_auth_session",
-    )
+    raw_value = local_storage.getItem(AUTH_STORAGE_KEY)
     if not raw_value:
         return None
 
