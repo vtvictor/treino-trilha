@@ -13,6 +13,7 @@ except ImportError:
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 AUTH_STORAGE_KEY = "treino_em_foco_auth_session"
+WORKOUT_PROGRESS_STORAGE_KEY = "treino_em_foco_workout_progress"
 
 SESSION_DEFAULTS = {
     "user": None,
@@ -163,24 +164,24 @@ def inject_styles():
         }
 
         .series-choices div.stButton > button:first-child {
-            height: 2.2rem;
-            min-width: 2.2rem;
-            margin-top: 0.2rem;
-            border-radius: 999px;
+            height: 1.35rem;
+            min-width: 1.35rem;
+            margin-top: 0.1rem;
+            border-radius: 0.35rem;
             background: rgba(15, 23, 42, 0.72);
             border: 1px solid rgba(148, 163, 184, 0.14);
-            color: #cbd5e1;
+            color: transparent;
             box-shadow: none;
-            font-size: 0.78rem;
+            font-size: 0.01rem;
             font-weight: 700;
             padding: 0;
         }
 
         .series-choices-active div.stButton > button:first-child {
             background: linear-gradient(135deg, #22c55e, #15803d);
-            color: #f8fafc;
+            color: transparent;
             border-color: transparent;
-            box-shadow: 0 8px 18px rgba(34, 197, 94, 0.18);
+            box-shadow: 0 4px 10px rgba(34, 197, 94, 0.18);
         }
 
         .timer-value {
@@ -293,6 +294,62 @@ def clear_browser_auth_session():
         return
     local_storage.setItem(AUTH_STORAGE_KEY, "")
     st.session_state.pop("browser_auth_payload", None)
+
+
+def get_browser_workout_progress():
+    if "browser_workout_progress" in st.session_state:
+        return st.session_state["browser_workout_progress"]
+
+    local_storage = get_local_storage_manager()
+    if local_storage is None:
+        return {}
+
+    raw_value = local_storage.getItem(WORKOUT_PROGRESS_STORAGE_KEY)
+    if not raw_value:
+        st.session_state["browser_workout_progress"] = {}
+        return {}
+
+    try:
+        payload = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    st.session_state["browser_workout_progress"] = payload
+    return payload
+
+
+def persist_browser_workout_progress(progress_payload):
+    st.session_state["browser_workout_progress"] = progress_payload
+    local_storage = get_local_storage_manager()
+    if local_storage is None:
+        return
+    local_storage.setItem(
+        WORKOUT_PROGRESS_STORAGE_KEY,
+        json.dumps(progress_payload),
+    )
+
+
+def remember_exercise_progress(workout_id, exercise_id, series_done):
+    progress_payload = get_browser_workout_progress()
+    workout_key = str(workout_id)
+    exercise_key = str(exercise_id)
+
+    if workout_key not in progress_payload:
+        progress_payload[workout_key] = {}
+
+    progress_payload[workout_key][exercise_key] = int(series_done)
+    persist_browser_workout_progress(progress_payload)
+
+
+def clear_saved_workout_progress(workout_id):
+    progress_payload = get_browser_workout_progress()
+    workout_key = str(workout_id)
+    if workout_key in progress_payload:
+        del progress_payload[workout_key]
+        persist_browser_workout_progress(progress_payload)
 
 
 def persist_browser_auth_session(session):
@@ -455,7 +512,20 @@ def fetch_exercises(workout_id):
         .order("id")
         .execute()
     )
-    return [normalize_exercise(item) for item in (response.data or [])]
+    exercises = [normalize_exercise(item) for item in (response.data or [])]
+    saved_progress = get_browser_workout_progress().get(str(workout_id), {})
+
+    for exercise in exercises:
+        saved_series_done = saved_progress.get(str(exercise["id"]))
+        if saved_series_done is None:
+            continue
+        exercise["series_done"] = max(
+            0,
+            min(int(saved_series_done), exercise["series_total"]),
+        )
+        exercise["done"] = exercise["series_done"] >= exercise["series_total"]
+
+    return exercises
 
 
 def fetch_history():
@@ -613,6 +683,12 @@ def get_current_series_done(exercise):
 def set_exercise_series_done(exercise, series_done):
     clamped_value = max(0, min(int(series_done), exercise["series_total"]))
     st.session_state[get_series_done_key(exercise["id"])] = clamped_value
+    if st.session_state.treino_selecionado:
+        remember_exercise_progress(
+            st.session_state.treino_selecionado["id"],
+            exercise["id"],
+            clamped_value,
+        )
     atualizar_progresso_exercicio(exercise, clamped_value)
 
 
@@ -637,6 +713,7 @@ def finalizar_treino(treino):
     ).execute()
 
     clear_exercise_widget_state(exercises)
+    clear_saved_workout_progress(treino["id"])
     st.session_state.treino_selecionado = None
     reset_timer()
     sync_active_workout_query_params()
@@ -945,21 +1022,21 @@ def render_exercise_list(treino, modo_edicao):
             render_exercise_progress(exercise)
 
         st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
-        series_cols = st.columns(exercise["series_total"] + 1)
-        for index, column in enumerate(series_cols):
-            button_label = "0" if index == 0 else str(index)
+        series_cols = st.columns(exercise["series_total"])
+        for index, column in enumerate(series_cols, start=1):
             wrapper_class = (
                 "series-choices series-choices-active"
-                if index == current_series_done
+                if index <= current_series_done
                 else "series-choices"
             )
             column.markdown(f"<div class='{wrapper_class}'>", unsafe_allow_html=True)
             if column.button(
-                button_label,
+                f"serie-{exercise['id']}-{index}",
                 key=f"series_button_{exercise['id']}_{index}",
                 use_container_width=True,
             ):
-                set_exercise_series_done(exercise, index)
+                novo_total = 0 if current_series_done == index else index
+                set_exercise_series_done(exercise, novo_total)
                 st.rerun()
             column.markdown("</div>", unsafe_allow_html=True)
 
