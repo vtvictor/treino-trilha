@@ -158,30 +158,42 @@ def inject_styles():
             letter-spacing: 0.12em;
         }
 
-        .series-choices {
-            margin-top: 0.15rem;
-            margin-bottom: 0.15rem;
+        div[data-testid="stSegmentedControl"] {
+            margin-top: -0.25rem;
+            margin-bottom: -0.15rem;
         }
 
-        .series-choices div.stButton > button:first-child {
-            height: 1.35rem;
-            min-width: 1.35rem;
-            margin-top: 0.1rem;
-            border-radius: 0.35rem;
-            background: rgba(15, 23, 42, 0.72);
-            border: 1px solid rgba(148, 163, 184, 0.14);
-            color: transparent;
-            box-shadow: none;
-            font-size: 0.01rem;
-            font-weight: 700;
-            padding: 0;
+        div[data-testid="stSegmentedControl"] div[role="radiogroup"] {
+            gap: 0.3rem;
+            flex-wrap: nowrap;
         }
 
-        .series-choices-active div.stButton > button:first-child {
-            background: linear-gradient(135deg, #22c55e, #15803d);
-            color: transparent;
-            border-color: transparent;
-            box-shadow: 0 4px 10px rgba(34, 197, 94, 0.18);
+        div[data-testid="stSegmentedControl"] label {
+            min-width: 1.45rem !important;
+            height: 1.45rem !important;
+            border-radius: 0.35rem !important;
+            padding: 0 !important;
+            background: rgba(15, 23, 42, 0.72) !important;
+            border: 1px solid rgba(148, 163, 184, 0.14) !important;
+            box-shadow: none !important;
+            justify-content: center !important;
+        }
+
+        div[data-testid="stSegmentedControl"] label[data-checked="true"] {
+            background: linear-gradient(135deg, #22c55e, #15803d) !important;
+            border-color: transparent !important;
+            box-shadow: 0 4px 10px rgba(34, 197, 94, 0.18) !important;
+        }
+
+        div[data-testid="stSegmentedControl"] label p {
+            font-size: 0.72rem !important;
+            line-height: 1 !important;
+            color: #cbd5e1 !important;
+            margin: 0 !important;
+        }
+
+        div[data-testid="stSegmentedControl"] label[data-checked="true"] p {
+            color: #f8fafc !important;
         }
 
         .timer-value {
@@ -205,31 +217,6 @@ def inject_styles():
 
         div.stButton > button:first-child:hover {
             transform: translateY(-1px);
-        }
-
-        div[data-testid="column"] .series-chip button {
-            height: 2.45rem !important;
-            min-width: 2.45rem;
-            margin-top: 0.22rem;
-            border-radius: 999px !important;
-            background: rgba(15, 23, 42, 0.75);
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            color: #cbd5e1;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
-            font-size: 0.82rem;
-            font-weight: 700;
-            padding: 0;
-        }
-
-        div[data-testid="column"] .series-chip-active button {
-            background: linear-gradient(135deg, #22c55e, #15803d) !important;
-            color: #f8fafc !important;
-            border-color: transparent !important;
-            box-shadow: 0 8px 18px rgba(34, 197, 94, 0.22);
-        }
-
-        div[data-testid="column"] .series-chip button:hover {
-            border-color: rgba(96, 165, 250, 0.45);
         }
 
         [data-testid="stForm"] div.stButton > button:first-child {
@@ -587,6 +574,7 @@ def summarize_workout_progress(exercises):
 def clear_exercise_widget_state(exercises):
     for exercise in exercises or []:
         st.session_state.pop(f"series_control_{exercise['id']}", None)
+        st.session_state.pop(f"series_selector_{exercise['id']}", None)
 
 
 def reset_timer():
@@ -673,6 +661,10 @@ def get_series_done_key(exercise_id):
     return f"series_control_{exercise_id}"
 
 
+def get_series_selector_key(exercise_id):
+    return f"series_selector_{exercise_id}"
+
+
 def get_current_series_done(exercise):
     series_key = get_series_done_key(exercise["id"])
     if series_key not in st.session_state:
@@ -683,6 +675,7 @@ def get_current_series_done(exercise):
 def set_exercise_series_done(exercise, series_done):
     clamped_value = max(0, min(int(series_done), exercise["series_total"]))
     st.session_state[get_series_done_key(exercise["id"])] = clamped_value
+    st.session_state[get_series_selector_key(exercise["id"])] = clamped_value
     if st.session_state.treino_selecionado:
         remember_exercise_progress(
             st.session_state.treino_selecionado["id"],
@@ -1022,23 +1015,23 @@ def render_exercise_list(treino, modo_edicao):
             render_exercise_progress(exercise)
 
         st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
-        series_cols = st.columns(exercise["series_total"])
-        for index, column in enumerate(series_cols, start=1):
-            wrapper_class = (
-                "series-choices series-choices-active"
-                if index <= current_series_done
-                else "series-choices"
-            )
-            column.markdown(f"<div class='{wrapper_class}'>", unsafe_allow_html=True)
-            if column.button(
-                f"serie-{exercise['id']}-{index}",
-                key=f"series_button_{exercise['id']}_{index}",
-                use_container_width=True,
-            ):
-                novo_total = 0 if current_series_done == index else index
-                set_exercise_series_done(exercise, novo_total)
-                st.rerun()
-            column.markdown("</div>", unsafe_allow_html=True)
+        selector_key = get_series_selector_key(exercise["id"])
+        if selector_key not in st.session_state:
+            st.session_state[selector_key] = current_series_done
+
+        selected_series = st.segmented_control(
+            "",
+            options=list(range(exercise["series_total"] + 1)),
+            key=selector_key,
+            selection_mode="single",
+            default=current_series_done,
+            format_func=lambda value: "□" if value == 0 else "■",
+            label_visibility="collapsed",
+        )
+
+        if selected_series is not None and int(selected_series) != current_series_done:
+            set_exercise_series_done(exercise, int(selected_series))
+            st.rerun()
 
         if modo_edicao:
             if st.button(
