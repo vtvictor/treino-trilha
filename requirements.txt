@@ -1,2 +1,3 @@
 streamlit
+streamlit-local-storage
 supabase==1.0.3

@@ -1,11 +1,18 @@
 import time
+import json
 
 import streamlit as st
 from supabase import create_client
 
+try:
+    from streamlit_local_storage import LocalStorage
+except ImportError:
+    LocalStorage = None
+
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+AUTH_STORAGE_KEY = "treino_em_foco_auth_session"
 
 SESSION_DEFAULTS = {
     "user": None,
@@ -274,6 +281,93 @@ def update_query_param(name, value):
     st.query_params[name] = str(value)
 
 
+def get_local_storage_manager():
+    if LocalStorage is None:
+        return None
+    return LocalStorage()
+
+
+def clear_browser_auth_session():
+    local_storage = get_local_storage_manager()
+    if local_storage is None:
+        return
+    local_storage.setItem(AUTH_STORAGE_KEY, "")
+    st.session_state.pop("browser_auth_payload", None)
+
+
+def persist_browser_auth_session(session):
+    if session is None:
+        return
+
+    payload = {
+        "access_token": session.access_token,
+        "refresh_token": session.refresh_token,
+    }
+    st.session_state["browser_auth_payload"] = payload
+
+    local_storage = get_local_storage_manager()
+    if local_storage is None:
+        return
+    local_storage.setItem(AUTH_STORAGE_KEY, json.dumps(payload))
+
+
+def get_browser_auth_session():
+    if "browser_auth_payload" in st.session_state:
+        return st.session_state["browser_auth_payload"]
+
+    local_storage = get_local_storage_manager()
+    if local_storage is None:
+        return None
+
+    raw_value = local_storage.getItem(
+        AUTH_STORAGE_KEY,
+        key="local_storage_auth_session",
+    )
+    if not raw_value:
+        return None
+
+    try:
+        payload = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+    if not payload or not payload.get("access_token") or not payload.get("refresh_token"):
+        return None
+
+    st.session_state["browser_auth_payload"] = payload
+    return payload
+
+
+def try_restore_browser_session():
+    if st.session_state.user or st.session_state.session:
+        return
+
+    payload = get_browser_auth_session()
+    if not payload:
+        return
+
+    fingerprint = (
+        payload.get("access_token"),
+        payload.get("refresh_token"),
+    )
+    if st.session_state.get("restored_auth_fingerprint") == fingerprint:
+        return
+
+    client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        response = client.auth.set_session(
+            payload["access_token"],
+            payload["refresh_token"],
+        )
+        st.session_state.user = response.user
+        st.session_state.session = response.session
+        st.session_state["restored_auth_fingerprint"] = fingerprint
+        persist_browser_auth_session(response.session)
+        st.rerun()
+    except Exception:
+        clear_browser_auth_session()
+
+
 def sync_active_workout_query_params():
     treino = st.session_state.treino_selecionado
     update_query_param("treino", treino["id"] if treino else None)
@@ -443,6 +537,7 @@ def login(email, senha):
         if response.user:
             st.session_state.user = response.user
             st.session_state.session = response.session
+            persist_browser_auth_session(response.session)
             return True
         return False
     except Exception as exc:
@@ -459,6 +554,7 @@ def logout():
     st.session_state.session = None
     st.session_state.treino_selecionado = None
     st.session_state.editando_treino_id = None
+    clear_browser_auth_session()
     reset_timer()
     sync_active_workout_query_params()
     st.rerun()
@@ -933,6 +1029,7 @@ def render_authenticated_app():
     history_items = fetch_history()
     history_stats = build_history_stats(history_items)
     restore_workout_from_query_params()
+    persist_browser_auth_session(st.session_state.session)
 
     render_header()
     aba = st.radio(
@@ -954,6 +1051,7 @@ def render_authenticated_app():
 
 inject_styles()
 init_session_state()
+try_restore_browser_session()
 
 if st.session_state.user:
     render_authenticated_app()
