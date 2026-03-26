@@ -665,6 +665,10 @@ def get_series_selector_key(exercise_id):
     return f"series_selector_{exercise_id}"
 
 
+def get_series_option_labels(series_total):
+    return ["0"] + [str(index) for index in range(1, series_total + 1)]
+
+
 def get_current_series_done(exercise):
     series_key = get_series_done_key(exercise["id"])
     if series_key not in st.session_state:
@@ -672,10 +676,16 @@ def get_current_series_done(exercise):
     return int(st.session_state[series_key])
 
 
+def sync_series_selector_state(exercise):
+    selector_key = get_series_selector_key(exercise["id"])
+    current_label = str(get_current_series_done(exercise))
+    if selector_key not in st.session_state or st.session_state[selector_key] != current_label:
+        st.session_state[selector_key] = current_label
+
+
 def set_exercise_series_done(exercise, series_done):
     clamped_value = max(0, min(int(series_done), exercise["series_total"]))
     st.session_state[get_series_done_key(exercise["id"])] = clamped_value
-    st.session_state[get_series_selector_key(exercise["id"])] = clamped_value
     if st.session_state.treino_selecionado:
         remember_exercise_progress(
             st.session_state.treino_selecionado["id"],
@@ -683,6 +693,12 @@ def set_exercise_series_done(exercise, series_done):
             clamped_value,
         )
     atualizar_progresso_exercicio(exercise, clamped_value)
+
+
+def update_series_from_selector(exercise):
+    selector_key = get_series_selector_key(exercise["id"])
+    selected_value = st.session_state.get(selector_key, "0")
+    set_exercise_series_done(exercise, int(selected_value))
 
 
 def finalizar_treino(treino):
@@ -1015,23 +1031,17 @@ def render_exercise_list(treino, modo_edicao):
             render_exercise_progress(exercise)
 
         st.markdown("<div class='series-chip-label'>Series</div>", unsafe_allow_html=True)
-        selector_key = get_series_selector_key(exercise["id"])
-        if selector_key not in st.session_state:
-            st.session_state[selector_key] = current_series_done
+        sync_series_selector_state(exercise)
 
-        selected_series = st.segmented_control(
+        st.segmented_control(
             "",
-            options=list(range(exercise["series_total"] + 1)),
-            key=selector_key,
+            options=get_series_option_labels(exercise["series_total"]),
+            key=get_series_selector_key(exercise["id"]),
             selection_mode="single",
-            default=current_series_done,
-            format_func=lambda value: "□" if value == 0 else "■",
             label_visibility="collapsed",
+            on_change=update_series_from_selector,
+            args=(exercise,),
         )
-
-        if selected_series is not None and int(selected_series) != current_series_done:
-            set_exercise_series_done(exercise, int(selected_series))
-            st.rerun()
 
         if modo_edicao:
             if st.button(
