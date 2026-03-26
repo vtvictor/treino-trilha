@@ -266,6 +266,52 @@ def init_session_state():
             st.session_state[key] = default
 
 
+def update_query_param(name, value):
+    if value in (None, ""):
+        if name in st.query_params:
+            del st.query_params[name]
+        return
+    st.query_params[name] = str(value)
+
+
+def sync_active_workout_query_params():
+    treino = st.session_state.treino_selecionado
+    update_query_param("treino", treino["id"] if treino else None)
+    update_query_param("descanso_ate", st.session_state.descanso_ate)
+    update_query_param("descanso_total", st.session_state.descanso_total)
+
+
+def restore_workout_from_query_params():
+    if st.session_state.treino_selecionado:
+        return
+
+    workout_id = st.query_params.get("treino")
+    if not workout_id:
+        return
+
+    workouts = fetch_workouts()
+    matching_workout = next(
+        (workout for workout in workouts if str(workout["id"]) == str(workout_id)),
+        None,
+    )
+    if not matching_workout:
+        update_query_param("treino", None)
+        update_query_param("descanso_ate", None)
+        update_query_param("descanso_total", None)
+        return
+
+    st.session_state.treino_selecionado = matching_workout
+
+    rest_until = st.query_params.get("descanso_ate")
+    rest_total = st.query_params.get("descanso_total")
+    try:
+        st.session_state.descanso_ate = float(rest_until) if rest_until else None
+        st.session_state.descanso_total = int(float(rest_total)) if rest_total else None
+    except ValueError:
+        reset_timer()
+        sync_active_workout_query_params()
+
+
 def get_db():
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
     if st.session_state.session:
@@ -385,6 +431,7 @@ def clear_exercise_widget_state(exercises):
 def reset_timer():
     st.session_state.descanso_ate = None
     st.session_state.descanso_total = None
+    sync_active_workout_query_params()
 
 
 def login(email, senha):
@@ -413,6 +460,7 @@ def logout():
     st.session_state.treino_selecionado = None
     st.session_state.editando_treino_id = None
     reset_timer()
+    sync_active_workout_query_params()
     st.rerun()
 
 
@@ -498,6 +546,7 @@ def finalizar_treino(treino):
     clear_exercise_widget_state(exercises)
     st.session_state.treino_selecionado = None
     reset_timer()
+    sync_active_workout_query_params()
     st.success("Treino finalizado!")
     st.rerun()
 
@@ -509,6 +558,7 @@ def voltar_para_lista():
     st.session_state.treino_selecionado = None
     st.session_state.editando_treino_id = None
     reset_timer()
+    sync_active_workout_query_params()
     st.rerun()
 
 
@@ -644,6 +694,7 @@ def render_workout_list(history_stats):
                 use_container_width=True,
             ):
                 st.session_state.treino_selecionado = treino
+                sync_active_workout_query_params()
                 st.rerun()
 
             if c2.button("Editar", key=f"btn_edit_{treino['id']}"):
@@ -679,58 +730,62 @@ def render_timer_section():
     if col_30.button("30s", key="timer_30", use_container_width=True):
         st.session_state.descanso_ate = time.time() + 30
         st.session_state.descanso_total = 30
+        sync_active_workout_query_params()
         st.rerun()
     if col_60.button("60s", key="timer_60", use_container_width=True):
         st.session_state.descanso_ate = time.time() + 60
         st.session_state.descanso_total = 60
+        sync_active_workout_query_params()
         st.rerun()
     if col_90.button("90s", key="timer_90", use_container_width=True):
         st.session_state.descanso_ate = time.time() + 90
         st.session_state.descanso_total = 90
+        sync_active_workout_query_params()
         st.rerun()
 
     if not st.session_state.descanso_ate:
         st.caption("Escolha um descanso quando quiser. O cronometro nao trava a tela.")
         return
 
-    restante = max(0, int(st.session_state.descanso_ate - time.time()))
-    total = max(st.session_state.descanso_total or 1, 1)
-    progresso = min(1.0, max(0.0, 1 - (restante / total)))
+    @st.fragment(run_every="1s")
+    def render_active_timer():
+        restante = max(0, int(st.session_state.descanso_ate - time.time()))
+        total = max(st.session_state.descanso_total or 1, 1)
+        progresso = min(1.0, max(0.0, 1 - (restante / total)))
 
-    if restante == 0:
+        if restante == 0:
+            st.markdown(
+                """
+                <div class="timer-card">
+                    <div class="eyebrow">Descanso</div>
+                    <div class="timer-value">Pronto</div>
+                    <div class="exercise-meta">Seu descanso terminou.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Limpar cronometro", key="clear_timer", use_container_width=True):
+                reset_timer()
+                st.rerun()
+            return
+
         st.markdown(
-            """
+            f"""
             <div class="timer-card">
-                <div class="eyebrow">Descanso</div>
-                <div class="timer-value">Pronto</div>
-                <div class="exercise-meta">Seu descanso terminou.</div>
+                <div class="eyebrow">Descanso em andamento</div>
+                <div class="timer-value">{restante}s</div>
+                <div class="exercise-meta">O tempo continua correndo sem bloquear o resto.</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Limpar cronometro", key="clear_timer", use_container_width=True):
+        st.progress(progresso)
+
+        if st.button("Encerrar descanso", key="stop_timer", use_container_width=True):
             reset_timer()
             st.rerun()
-        return
 
-    st.markdown(
-        f"""
-        <div class="timer-card">
-            <div class="eyebrow">Descanso em andamento</div>
-            <div class="timer-value">{restante}s</div>
-            <div class="exercise-meta">O tempo continua correndo sem bloquear o resto.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.progress(progresso)
-
-    col_refresh, col_stop = st.columns(2)
-    if col_refresh.button("Atualizar tempo", key="refresh_timer", use_container_width=True):
-        st.rerun()
-    if col_stop.button("Encerrar descanso", key="stop_timer", use_container_width=True):
-        reset_timer()
-        st.rerun()
+    render_active_timer()
 
 
 def render_workout_summary(progress, history_stats, treino_id):
@@ -877,6 +932,7 @@ def render_workout_detail(history_stats):
 def render_authenticated_app():
     history_items = fetch_history()
     history_stats = build_history_stats(history_items)
+    restore_workout_from_query_params()
 
     render_header()
     aba = st.radio(
