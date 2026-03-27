@@ -269,6 +269,12 @@ def update_query_param(name, value):
     st.query_params[name] = str(value)
 
 
+def next_storage_component_key(prefix):
+    counter = st.session_state.get("storage_component_counter", 0) + 1
+    st.session_state["storage_component_counter"] = counter
+    return f"{prefix}_{counter}"
+
+
 def get_local_storage_manager():
     if LocalStorage is None:
         return None
@@ -279,7 +285,11 @@ def clear_browser_auth_session():
     local_storage = get_local_storage_manager()
     if local_storage is None:
         return
-    local_storage.setItem(AUTH_STORAGE_KEY, "")
+    local_storage.setItem(
+        AUTH_STORAGE_KEY,
+        "",
+        key=next_storage_component_key("clear_auth_session"),
+    )
     st.session_state.pop("browser_auth_payload", None)
 
 
@@ -316,6 +326,7 @@ def persist_browser_workout_progress(progress_payload):
     local_storage.setItem(
         WORKOUT_PROGRESS_STORAGE_KEY,
         json.dumps(progress_payload),
+        key=next_storage_component_key("persist_workout_progress"),
     )
 
 
@@ -352,7 +363,11 @@ def persist_browser_auth_session(session):
     local_storage = get_local_storage_manager()
     if local_storage is None:
         return
-    local_storage.setItem(AUTH_STORAGE_KEY, json.dumps(payload))
+    local_storage.setItem(
+        AUTH_STORAGE_KEY,
+        json.dumps(payload),
+        key=next_storage_component_key("persist_auth_session"),
+    )
 
 
 def get_browser_auth_session():
